@@ -125,11 +125,30 @@
   }
   .hdrs { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 8px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  .preset-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .preset-bar select { flex: 1; min-width: 180px; }
+  .preset-bar input { min-width: 180px; }
+  .preset-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>HTTP Request Tool</h1>
+
+  <div class="card">
+    <div class="preset-bar">
+      <select id="preset-select"><option value="">— Saved presets —</option></select>
+      <button class="ghost" id="preset-load">Load</button>
+      <input id="preset-name" placeholder="Preset name">
+      <button class="ghost" id="preset-save">Save</button>
+      <button class="ghost" id="preset-delete">Delete</button>
+      <button class="ghost" id="preset-export">Export</button>
+      <button class="ghost" id="preset-import">Import</button>
+      <input type="file" id="preset-file" accept="application/json" hidden>
+    </div>
+    <div class="preset-note" id="preset-note"></div>
+  </div>
 
   <div class="card">
     <div class="row">
@@ -327,6 +346,121 @@
       btn.textContent = 'Send';
     }
   });
+
+  // ---------- Presets ----------
+  const STORE_KEY = 'http-tool.presets';
+  let memoryPresets = null; // fallback when localStorage is unavailable
+
+  function storageAvailable() {
+    try {
+      const k = '__probe__';
+      localStorage.setItem(k, '1');
+      localStorage.removeItem(k);
+      return true;
+    } catch { return false; }
+  }
+  const useLocal = storageAvailable();
+
+  function readPresets() {
+    if (!useLocal) return memoryPresets || {};
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; }
+  }
+  function writePresets(obj) {
+    if (!useLocal) { memoryPresets = obj; return true; }
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(obj)); return true; }
+    catch { return false; }
+  }
+
+  function snapshot() {
+    return {
+      method: $('#method').value,
+      url: $('#url').value,
+      params: collect('params-list'),
+      headers: collect('headers-list'),
+      bodyType: $('#body-type').value,
+      body: $('#body').value,
+    };
+  }
+
+  function applySnapshot(p) {
+    $('#method').value = p.method || 'GET';
+    $('#url').value = p.url || '';
+    $('#params-list').innerHTML = '';
+    $('#headers-list').innerHTML = '';
+    (p.params || []).forEach(x => addRow('params-list', x.key, x.value));
+    (p.headers || []).forEach(x => addRow('headers-list', x.key, x.value));
+    $('#body-type').value = p.bodyType || 'json';
+    $('#body').value = p.body || '';
+  }
+
+  function note(msg) { $('#preset-note').textContent = msg; }
+
+  function refreshPresetList(selected = '') {
+    const sel = $('#preset-select');
+    const names = Object.keys(readPresets()).sort();
+    sel.innerHTML = '<option value="">— Saved presets —</option>' +
+      names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+    sel.value = selected && names.includes(selected) ? selected : '';
+  }
+
+  $('#preset-save').addEventListener('click', () => {
+    const name = $('#preset-name').value.trim() || $('#preset-select').value;
+    if (!name) { note('Enter a name to save this preset.'); return; }
+    const all = readPresets();
+    all[name] = snapshot();
+    if (!writePresets(all)) { note('Could not write to storage. Try Export instead.'); return; }
+    refreshPresetList(name);
+    $('#preset-name').value = '';
+    note(`Saved "${name}"${useLocal ? '' : ' (session only: browser storage unavailable here)'}.`);
+  });
+
+  $('#preset-load').addEventListener('click', () => {
+    const name = $('#preset-select').value;
+    if (!name) { note('Pick a preset to load.'); return; }
+    applySnapshot(readPresets()[name]);
+    note(`Loaded "${name}".`);
+  });
+
+  $('#preset-delete').addEventListener('click', () => {
+    const name = $('#preset-select').value;
+    if (!name) { note('Pick a preset to delete.'); return; }
+    const all = readPresets();
+    delete all[name];
+    writePresets(all);
+    refreshPresetList();
+    note(`Deleted "${name}".`);
+  });
+
+  $('#preset-export').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(readPresets(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'http-presets.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $('#preset-import').addEventListener('click', () => $('#preset-file').click());
+  $('#preset-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const incoming = JSON.parse(await file.text());
+      const merged = Object.assign({}, readPresets(), incoming);
+      writePresets(merged);
+      refreshPresetList();
+      note(`Imported ${Object.keys(incoming).length} preset(s).`);
+    } catch { note('That file is not a valid presets file.'); }
+    e.target.value = '';
+  });
+
+  $('#preset-select').addEventListener('change', () => {
+    const name = $('#preset-select').value;
+    if (name) { applySnapshot(readPresets()[name]); note(`Loaded "${name}".`); }
+  });
+
+  refreshPresetList();
+  if (!useLocal) note('Browser storage is unavailable here, so presets last only for this session. Export to keep them.');
 
   // Ctrl/Cmd+Enter to send
   document.addEventListener('keydown', (e) => {
