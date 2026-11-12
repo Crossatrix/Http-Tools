@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP Request Tool</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --text: #1d1d1b;
+    --muted: #6b6b66;
+    --border: #d9d9d4;
+    --accent: #c15f3c;
+    --accent-text: #ffffff;
+    --ok: #2e7d4f;
+    --err: #b3261e;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1b1b19;
+      --surface: #262624;
+      --text: #ececE7;
+      --muted: #9b9b94;
+      --border: #3a3a37;
+      --accent: #d97757;
+      --accent-text: #1b1b19;
+      --ok: #6cc38c;
+      --err: #f2857c;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1b1b19;
+    --surface: #262624;
+    --text: #ececE7;
+    --muted: #9b9b94;
+    --border: #3a3a37;
+    --accent: #d97757;
+    --accent-text: #1b1b19;
+    --ok: #6cc38c;
+    --err: #f2857c;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 16px; font-weight: 600; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  select, input, textarea, button {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  select { min-width: 110px; }
+  input.url { flex: 1; min-width: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  textarea { width: 100%; min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 20px;
+  }
+  button.primary:disabled { opacity: 0.6; cursor: wait; }
+  button.ghost { cursor: pointer; background: transparent; }
+  button.ghost:hover { border-color: var(--accent); }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 8px 12px; color: var(--muted); cursor: pointer;
+  }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .kv-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .kv-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .kv-row input.key { max-width: 260px; }
+  .kv-row button { padding: 6px 10px; }
+
+  .status { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+  .badge { font-weight: 600; font-family: ui-monospace, monospace; }
+  .badge.ok { color: var(--ok); }
+  .badge.err { color: var(--err); }
+  .muted { color: var(--muted); }
+
+  pre {
+    margin: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow: auto;
+    max-height: 420px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+  }
+  .hdrs { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 8px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>HTTP Request Tool</h1>
+
+  <div class="card">
+    <div class="row">
+      <select id="method">
+        <option>GET</option>
+        <option>POST</option>
+        <option>PUT</option>
+        <option>PATCH</option>
+        <option>DELETE</option>
+        <option>HEAD</option>
+        <option>OPTIONS</option>
+      </select>
+      <input class="url" id="url" type="url" placeholder="https://api.example.com/endpoint" autocomplete="off">
+      <button class="primary" id="send">Send</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" data-tab="params">Params</button>
+      <button class="tab" data-tab="headers">Headers</button>
+      <button class="tab" data-tab="body">Body</button>
+    </div>
+
+    <div class="panel active" id="panel-params">
+      <div id="params-list"></div>
+      <button class="ghost" data-add="params">+ Add param</button>
+    </div>
+
+    <div class="panel" id="panel-headers">
+      <div id="headers-list"></div>
+      <button class="ghost" data-add="headers">+ Add header</button>
+    </div>
+
+    <div class="panel" id="panel-body">
+      <div class="row" style="margin-bottom:8px">
+        <select id="body-type">
+          <option value="json">JSON</option>
+          <option value="text">Text</option>
+          <option value="form">Form (urlencoded)</option>
+        </select>
+      </div>
+      <textarea id="body" placeholder='{"key": "value"}'></textarea>
+      <div class="hint">Body is ignored for GET and HEAD requests.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="status" id="status">
+      <span class="muted">No request sent yet.</span>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-rtab="rbody">Body</button>
+      <button class="tab" data-rtab="rheaders">Headers</button>
+    </div>
+    <div class="panel active" id="rpanel-rbody"><pre id="resp-body">—</pre></div>
+    <div class="panel" id="rpanel-rheaders"><pre id="resp-headers" class="hdrs">—</pre></div>
+  </div>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+
+  // Tabs
+  document.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b === btn));
+    ['params','headers','body'].forEach(n => $('#panel-' + n).classList.toggle('active', btn.dataset.tab === n));
+  }));
+  document.querySelectorAll('[data-rtab]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('active', b === btn));
+    ['rbody','rheaders'].forEach(n => $('#rpanel-' + n).classList.toggle('active', btn.dataset.rtab === n));
+  }));
+
+  // Key/value rows
+  function addRow(listId, key = '', value = '') {
+    const row = document.createElement('div');
+    row.className = 'kv-row';
+    row.innerHTML = `
+      <input class="key" placeholder="Key" value="">
+      <input class="val" placeholder="Value" value="">
+      <button class="ghost" title="Remove">✕</button>`;
+    row.querySelector('.key').value = key;
+    row.querySelector('.val').value = value;
+    row.querySelector('button').addEventListener('click', () => { row.remove(); syncUrl(); });
+    row.querySelectorAll('input').forEach(i => i.addEventListener('input', syncUrl));
+    $('#' + listId).appendChild(row);
+  }
+  document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+    addRow(b.dataset.add === 'params' ? 'params-list' : 'headers-list');
+  }));
+
+  function collect(listId) {
+    return [...$('#' + listId).querySelectorAll('.kv-row')]
+      .map(r => ({ key: r.querySelector('.key').value.trim(), value: r.querySelector('.val').value }))
+      .filter(p => p.key);
+  }
+
+  // Keep URL query string in sync with params table
+  let syncing = false;
+  function syncUrl() {
+    if (syncing) return;
+    try {
+      const raw = $('#url').value.trim();
+      const base = raw.split('?')[0];
+      const qs = new URLSearchParams();
+      collect('params-list').forEach(p => qs.append(p.key, p.value));
+      const s = qs.toString();
+      $('#url').value = s ? base + '?' + s : base;
+    } catch {}
+  }
+  $('#url').addEventListener('input', () => {
+    syncing = true;
+    const q = $('#url').value.split('?')[1] || '';
+    $('#params-list').innerHTML = '';
+    new URLSearchParams(q).forEach((v, k) => addRow('params-list', k, v));
+    syncing = false;
+  });
+
+  // Auto-set JSON content type
+  $('#body-type').addEventListener('change', () => {});
+
+  function buildRequest() {
+    const method = $('#method').value;
+    let url = $('#url').value.trim();
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+    const headers = {};
+    collect('headers-list').forEach(h => headers[h.key] = h.value);
+
+    let body;
+    const raw = $('#body').value;
+    if (!['GET', 'HEAD'].includes(method) && raw.trim()) {
+      const type = $('#body-type').value;
+      if (type === 'json') {
+        body = raw;
+        if (!Object.keys(headers).some(k => k.toLowerCase() === 'content-type'))
+          headers['Content-Type'] = 'application/json';
+      } else if (type === 'form') {
+        body = raw;
+        if (!Object.keys(headers).some(k => k.toLowerCase() === 'content-type'))
+          headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      } else {
+        body = raw;
+      }
+    }
+    return { method, url, headers, body };
+  }
+
+  function formatBody(text, contentType) {
+    if (contentType && contentType.includes('json')) {
+      try { return JSON.stringify(JSON.parse(text), null, 2); } catch {}
+    }
+    return text;
+  }
+
+  function setStatus(html) { $('#status').innerHTML = html; }
+
+  $('#send').addEventListener('click', async () => {
+    const btn = $('#send');
+    const { method, url, headers, body } = buildRequest();
+    if (!$('#url').value.trim()) { setStatus('<span class="badge err">Enter a URL first.</span>'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    setStatus('<span class="muted">Request in flight…</span>');
+    $('#resp-body').textContent = '';
+    $('#resp-headers').textContent = '';
+
+    const started = performance.now();
+    try {
+      const res = await fetch(url, { method, headers, body });
+      const elapsed = Math.round(performance.now() - started);
+      const size = new Blob([await res.clone().arrayBuffer()]).size;
+      const text = await res.text();
+      const ct = res.headers.get('content-type') || '';
+
+      const cls = res.ok ? 'ok' : 'err';
+      setStatus(`
+        <span class="badge ${cls}">${res.status} ${res.statusText || ''}</span>
+        <span class="muted">${elapsed} ms</span>
+        <span class="muted">${(size / 1024).toFixed(2)} KB</span>
+        <span class="muted">${ct || 'no content-type'}</span>`);
+
+      $('#resp-body').textContent = formatBody(text, ct) || '(empty body)';
+      let hdrs = '';
+      res.headers.forEach((v, k) => hdrs += `${k}: ${v}\n`);
+      $('#resp-headers').textContent = hdrs || '(no headers exposed)';
+    } catch (err) {
+      setStatus(`<span class="badge err">Request failed</span>`);
+      $('#resp-body').textContent = String(err && err.message || err) +
+        '\n\nNote: this is often a CORS restriction. The target server must allow requests from this page.';
+      $('#resp-headers').textContent = '—';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send';
+    }
+  });
+
+  // Ctrl/Cmd+Enter to send
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') $('#send').click();
+  });
+</script>
+</body>
+</html>
